@@ -1,0 +1,36 @@
+@startuml
+title Django Project Overview
+
+skinparam componentStyle rectangle
+
+package "djangoProject" {
+  component "settings.py" as Settings
+  component "urls.py" as Urls
+  component "asgi.py" as Asgi
+  component "wsgi.py" as Wsgi
+}
+
+rectangle "Client (Browser)" as Client
+component "Views" as Views
+component "Templates" as Templates
+component "Models" as Models
+database "Database" as DB
+
+Client --> Urls : HTTP request
+Urls --> Views : dispatch
+Views --> Templates : render
+Views --> Models : ORM queries
+Models --> DB : SQL
+
+Settings ..> Urls : config
+Asgi ..> Settings
+Wsgi ..> Settings
+
+note right of Settings
+  Configure installed apps, middleware,
+  databases, templates, and other settings.
+end note
+
+@enduml
+
+
