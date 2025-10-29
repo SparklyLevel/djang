@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colors page</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #sectors path {
+            cursor: pointer;
+            transition: transform 0.2s ease, filter 0.2s ease;
+            transform-origin: 200px 200px;
+        }
+        #sectors path:hover {
+            transform: scale(1.05);
+            filter: brightness(1.15);
+        }
+    </style>
+</head>
+<body class="min-h-dvh bg-gradient-to-b from-slate-50 to-slate-100 text-slate-800">
+    <main class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-slate-900 mb-8">Круговая диаграмма цветов</h1>
+        
+        <div class="flex flex-col lg:flex-row gap-8 items-center lg:items-start">
+            <!-- Круговая диаграмма -->
+            <div class="flex-shrink-0">
+                <svg id="pieChart" width="400" height="400" viewBox="0 0 400 400" class="drop-shadow-lg">
+                    <circle cx="200" cy="200" r="180" fill="#e5e7eb" stroke="#cbd5e1" stroke-width="2"/>
+                    <g id="sectors"></g>
+                    <circle cx="200" cy="200" r="60" fill="white" stroke="#cbd5e1" stroke-width="2"/>
+                </svg>
+            </div>
+
+            <!-- Панель управления -->
+            <div class="flex-1 w-full lg:w-auto">
+                <div class="bg-white rounded-xl shadow-lg p-6 pb-24">
+                    <h2 class="text-xl font-semibold text-slate-900 mb-4">Управление секторами</h2>
+                    <div id="sectorButtons" class="space-y-3 mb-6 max-h-[400px] overflow-y-auto">
+                        <!-- Кнопки будут добавлены динамически -->
+                    </div>
+                    <div class="mt-4 text-sm text-slate-600">
+                        <p>Секторов: <span id="sectorCount" class="font-semibold">0</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Фиксированные кнопки добавления -->
+        <div class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 flex items-center gap-3">
+            <button id="addSectorBtn" 
+                    class="px-6 py-3 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition shadow-lg text-lg">
+                + Добавить сектор
+            </button>
+            <button id="addSectorHoldBtn" 
+                    class="px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition shadow-lg text-sm relative">
+                <span class="block">⏸</span>
+                <span class="text-xs mt-0.5 block">Зажать</span>
+            </button>
+        </div>
+    </main>
+
+    <script>
+        let sectors = [];
+        const firstColor = '#ef4444'; // Красный
+        const lastColor = '#8b5cf6';  // Фиолетовый
+
+        // Преобразование hex в RGB
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : null;
+        }
+
+        // Преобразование RGB в HSL
+        function rgbToHsl(r, g, b) {
+            r /= 255;
+            g /= 255;
+            b /= 255;
+            
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            
+            if (max === min) {
+                h = s = 0;
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                
+                switch (max) {
+                    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+                    case g: h = ((b - r) / d + 2) / 6; break;
+                    case b: h = ((r - g) / d + 4) / 6; break;
+                }
+            }
+            
+            return { h: h * 360, s: s * 100, l: l * 100 };
+        }
+
+        // Преобразование HSL в RGB
+        function hslToRgb(h, s, l) {
+            h /= 360;
+            s /= 100;
+            l /= 100;
+            
+            let r, g, b;
+            
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            
+            return {
+                r: Math.round(r * 255),
+                g: Math.round(g * 255),
+                b: Math.round(b * 255)
+            };
+        }
+
+        // Преобразование RGB в hex
+        function rgbToHex(r, g, b) {
+            return "#" + [r, g, b].map(x => {
+                const hex = Math.round(x).toString(16);
+                return hex.length === 1 ? "0" + hex : hex;
+            }).join("");
+        }
+
+        // Интерполяция цвета в HSL пространстве (радуга: красный -> оранжевый -> жёлтый -> зелёный -> голубой -> синий -> фиолетовый)
+        function interpolateColorHsl(color1, color2, factor) {
+            const rgb1 = hexToRgb(color1);
+            const rgb2 = hexToRgb(color2);
+            
+            const hsl1 = rgbToHsl(rgb1.r, rgb1.g, rgb1.b);
+            const hsl2 = rgbToHsl(rgb2.r, rgb2.g, rgb2.b);
+            
+            // Интерполяция Hue - прямой путь по часовой стрелке
+            // Красный (0°) -> Оранжевый -> Жёлтый -> Зелёный (120°) -> Голубой -> Синий -> Фиолетовый (260°)
+            let h1 = hsl1.h; // Красный ~0°
+            let h2 = hsl2.h; // Фиолетовый ~260°
+            
+            // Если h2 < h1, это значит мы идём через 0°, добавляем 360 к h2
+            if (h2 < h1) {
+                h2 += 360;
+            }
+            
+            // Линейная интерполяция по часовой стрелке (путь через зелёный)
+            // При 3 секторах (factor=0.5): h = 0 + (260-0)*0.5 = 130° (жёлто-зелёный, близко к зелёному)
+            // При большем количестве секторов переход становится плавнее и образуется полная радуга
+            let h = (h1 + (h2 - h1) * factor) % 360;
+            if (h < 0) h += 360;
+            
+            const s = hsl1.s + (hsl2.s - hsl1.s) * factor;
+            const l = hsl1.l + (hsl2.l - hsl1.l) * factor;
+            
+            const rgb = hslToRgb(h, s, l);
+            return rgbToHex(rgb.r, rgb.g, rgb.b);
+        }
+
+        // Получение цвета сектора
+        // 1–3 секторов: фиксированный набор (красный -> зелёный -> фиолетовый)
+        // 4+ секторов: полная радуга по кругу с непрерывным переходом (в т.ч. фиолетовый -> красный)
+        function getSectorColor(index, total) {
+            if (total <= 0) return firstColor;
+            if (total === 1) return firstColor;
+
+            if (total === 2) {
+                return index === 0 ? firstColor : lastColor;
+            }
+
+            if (total === 3) {
+                if (index === 0) return firstColor;          // красный
+                if (index === 1) return '#22c55e';           // зелёный (emerald-500)
+                return lastColor;                             // фиолетовый
+            }
+
+            // Радуга: равномерные шаги по hue на всём круге
+            // Гарантируем, что первый сектор — красный (h=0)
+            const hueStep = 360 / total;
+            const h = (index * hueStep) % 360; // 0, step, 2*step, ...
+            const rgb = hslToRgb(h, 90, 55);   // насыщенные и немного светлее середины
+            return rgbToHex(rgb.r, rgb.g, rgb.b);
+        }
+
+        // Обновление цветов всех секторов при изменении их количества
+        function updateSectorColors() {
+            sectors.forEach((sector, index) => {
+                sector.color = getSectorColor(index, sectors.length);
+            });
+        }
+
+        function calculateArc(startAngle, endAngle, cx = 200, cy = 200, radius = 180) {
+            const start = polarToCartesian(cx, cy, radius, endAngle);
+            const end = polarToCartesian(cx, cy, radius, startAngle);
+            const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+            
+            const d = [
+                "M", cx, cy,
+                "L", start.x, start.y,
+                "A", radius, radius, 0, largeArcFlag, 0, end.x, end.y,
+                "Z"
+            ].join(" ");
+            
+            return d;
+        }
+
+        function polarToCartesian(centerX, centerY, radius, angleInDegrees) {
+            const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+            return {
+                x: centerX + (radius * Math.cos(angleInRadians)),
+                y: centerY + (radius * Math.sin(angleInRadians))
+            };
+        }
+
+        function updatePieChart() {
+            const sectorsGroup = document.getElementById('sectors');
+            sectorsGroup.innerHTML = '';
+            
+            if (sectors.length === 0) return;
+            
+            // Обновляем цвета всех секторов
+            updateSectorColors();
+            
+            const anglePerSector = 360 / sectors.length;
+            
+            sectors.forEach((sector, index) => {
+                const startAngle = index * anglePerSector;
+                const endAngle = (index + 1) * anglePerSector;
+                
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', calculateArc(startAngle, endAngle));
+                path.setAttribute('fill', sector.color);
+                path.setAttribute('stroke', '#ffffff');
+                path.setAttribute('stroke-opacity', '0.45');
+                path.setAttribute('stroke-width', '1');
+                path.setAttribute('data-index', index);
+                
+                // Добавляем обработчик клика для удаления сектора
+                path.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const sectorIndex = parseInt(path.getAttribute('data-index'));
+                    removeSector(sectorIndex);
+                });
+                
+                sectorsGroup.appendChild(path);
+            });
+            
+            updateSectorCount();
+        }
+
+        function updateSectorButtons() {
+            const buttonsContainer = document.getElementById('sectorButtons');
+            buttonsContainer.innerHTML = '';
+            
+            sectors.forEach((sector, index) => {
+                const button = document.createElement('button');
+                button.className = `w-full px-4 py-2 rounded-lg text-white font-medium hover:opacity-80 transition flex items-center gap-3`;
+                button.style.backgroundColor = sector.color;
+                button.innerHTML = `
+                    <div class="w-4 h-4 rounded-full bg-white/30"></div>
+                    <span>Сектор ${index + 1}</span>
+                `;
+                button.onclick = () => removeSector(index);
+                buttonsContainer.appendChild(button);
+            });
+        }
+
+        function addSector() {
+            sectors.push({ color: firstColor }); // Временный цвет, обновится в updatePieChart
+            updatePieChart();
+            updateSectorButtons();
+        }
+
+        function removeSector(index) {
+            sectors.splice(index, 1);
+            updatePieChart();
+            updateSectorButtons();
+        }
+
+        function updateSectorCount() {
+            document.getElementById('sectorCount').textContent = sectors.length;
+        }
+
+        document.getElementById('addSectorBtn').addEventListener('click', addSector);
+
+        // Логика для кнопки зажатия (автоматическое добавление секторов)
+        let holdInterval = null;
+        const holdButton = document.getElementById('addSectorHoldBtn');
+
+        // Начало зажатия (мышь)
+        holdButton.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            addSector(); // Добавляем сразу один сектор
+            holdInterval = setInterval(() => {
+                addSector();
+            }, 150); // Добавляем сектор каждые 150мс при удержании
+        });
+
+        // Конец зажатия (мышь)
+        holdButton.addEventListener('mouseup', () => {
+            clearInterval(holdInterval);
+            holdInterval = null;
+        });
+
+        // Выход курсора за пределы кнопки во время зажатия
+        holdButton.addEventListener('mouseleave', () => {
+            clearInterval(holdInterval);
+            holdInterval = null;
+        });
+
+        // Для сенсорных устройств (touch)
+        holdButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            addSector();
+            holdInterval = setInterval(() => {
+                addSector();
+            }, 150);
+        });
+
+        holdButton.addEventListener('touchend', () => {
+            clearInterval(holdInterval);
+            holdInterval = null;
+        });
+
+        holdButton.addEventListener('touchcancel', () => {
+            clearInterval(holdInterval);
+            holdInterval = null;
+        });
+    </script>
+</body>
+</html>
